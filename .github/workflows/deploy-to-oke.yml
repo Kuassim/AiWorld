@@ -42,7 +42,7 @@ jobs:
         chmod 600 ~/.oci/config
         
         # Test OCI connection
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_USER_OCID }}' --query 'data.name'
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
         
         echo "✅ OCI CLI setup successful"
     
