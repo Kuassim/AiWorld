@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Test region secret
+    - name: Test user secret
       run: |
-        echo "Region length: $(echo '${{ secrets.OCI_REGION }}' | wc -c)"
-        echo "Region value: ${{ secrets.OCI_REGION }}"
+        echo "Region length: $(echo '${{ secrets.OCI_CLI_USER}}' | wc -c)"
+        echo "Region value: ${{ secrets.OCI_CLI_USER}}"
