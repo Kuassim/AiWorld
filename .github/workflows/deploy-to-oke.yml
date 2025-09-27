@@ -1,66 +1,33 @@
-name: Deploy to OKE
+name: Debug Fingerprint
 
 on:
   push:
     branches: [main]
 
 jobs:
-  deploy:
+  debug:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Setup kubectl without OCI CLI
+    - name: Debug fingerprint format
       run: |
-        # Install kubectl
-        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-        chmod +x kubectl
-        sudo mv kubectl /usr/local/bin/
+        echo "Current fingerprint from secret: '${{ secrets.OCI_CLI_FINGERPRINT }}'"
+        echo "Fingerprint length: $(echo '${{ secrets.OCI_iCLI_FINGERPRINT }}' | wc -c)"
         
-        # Create private key
-        mkdir -p /tmp/oci-keys
-        echo "${{ secrets.OCI_KEY_FILE }}" > /tmp/oci-keys/key.pem
-        chmod 600 /tmp/oci-keys/key.pem
+        # Create private key and generate correct fingerprint
+        mkdir -p /tmp/oci-test
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci-test/key.pem
+        chmod 600 /tmp/oci-test/key.pem
         
-        # Create a minimal kubeconfig manually using OKE cluster endpoint
-        # This requires getting cluster details via OCI API calls
-        # For now, let's install OCI CLI but force environment variable usage
+        # Generate fingerprint from your actual private key
+        CORRECT_FINGERPRINT=$(openssl rsa -pubout -outform DER -in /tmp/oci-test/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+        echo "Correct fingerprint should be: $CORRECT_FINGERPRINT"
         
-        # Install OCI CLI
-        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        # Test if key is valid
+        if openssl rsa -check -noout -in /tmp/oci-test/key.pem 2>/dev/null; then
+          echo "✅ Private key is valid"
+        else
+          echo "❌ Private key is invalid"
+        fi
         
-        # Completely prevent config file creation
-        export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True
-        export OCI_CONFIG_FILE=/dev/null
-        export PATH="$HOME/bin:$PATH"
-        
-        # Test with all environment variables set
-        env \
-          OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}' \
-          OCI_CLI_FINGERPRINT='${{ secrets.OCI_CLI_FINGERPRINT }}' \
-          OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}' \
-          OCI_CLI_REGION='${{ secrets.OCI_REGION }}' \
-          OCI_CLI_KEY_CONTENT='/tmp/oci-keys/key.pem' \
-          OCI_CONFIG_FILE=/dev/null \
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}'
-    
-    - name: Create kubeconfig
-      run: |
-        mkdir -p ~/.kube
-        
-        env \
-          OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}' \
-          OCI_CLI_FINGERPRINT='${{ secrets.OCI_CLI_FINGERPRINT }}' \
-          OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}' \
-          OCI_CLI_REGION='${{ secrets.OCI_REGION }}' \
-          OCI_CLI_KEY_CONTENT='/tmp/oci-keys/key.pem' \
-          OCI_CONFIG_FILE=/dev/null \
-        $HOME/bin/oci ce cluster create-kubeconfig \
-          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
-          --file ~/.kube/config \
-          --region '${{ secrets.OCI_REGION }}' \
-          --token-version 2.0.0
-    
-    - name: Test connection
-      run: kubectl get nodes
+        # Clean up
+        rm -rf /tmp/oci-test
