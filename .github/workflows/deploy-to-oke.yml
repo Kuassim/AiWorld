@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-    - name: Test user secret
+    - name: Test Fingerprint
       run: |
-        echo "Tenancy length: $(echo '${{ secrets.OCI_CLI_TENANCY}}' | wc -c)"
-        echo "Tenancy value: ${{ secrets.OCI_CLI_TENANCY}}"
+        echo "Fingerprint length: $(echo '${{ secrets.OCI_CLI_FINGERPRINT}}' | wc -c)"
+        echo "Fingerprint value: ${{ secrets.OCI_CLI_FINGERPRINT}}"
