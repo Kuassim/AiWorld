@@ -1,33 +1,63 @@
-name: Debug Fingerprint
+name: Deploy to OKE
 
 on:
   push:
     branches: [main]
 
 jobs:
-  debug:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Debug fingerprint format
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup OCI CLI with valid dummy config
       run: |
-        echo "Current fingerprint from secret: '${{ secrets.OCI_CLI_FINGERPRINT }}'"
-        echo "Fingerprint length: $(echo '${{ secrets.OCI_iCLI_FINGERPRINT }}' | wc -c)"
+        # Install OCI CLI
+        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "$HOME/bin" >> $GITHUB_PATH
         
-        # Create private key and generate correct fingerprint
-        mkdir -p /tmp/oci-test
-        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > /tmp/oci-test/key.pem
-        chmod 600 /tmp/oci-test/key.pem
+        # Create OCI directory
+        mkdir -p ~/.oci
         
-        # Generate fingerprint from your actual private key
-        CORRECT_FINGERPRINT=$(openssl rsa -pubout -outform DER -in /tmp/oci-test/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
-        echo "Correct fingerprint should be: $CORRECT_FINGERPRINT"
+        # Create private key file
+        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
         
-        # Test if key is valid
-        if openssl rsa -check -noout -in /tmp/oci-test/key.pem 2>/dev/null; then
-          echo "✅ Private key is valid"
-        else
-          echo "❌ Private key is invalid"
-        fi
+        # Generate fingerprint from the actual private key
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+        echo "Generated fingerprint: $FINGERPRINT"
         
-        # Clean up
-        rm -rf /tmp/oci-test
+        # Create valid config file with generated fingerprint
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_CLI_USER }}
+        fingerprint=${FINGERPRINT}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOF
+        
+        chmod 600 ~/.oci/config
+        
+        # Test OCI connection
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_USER_OCID }}' --query 'data.name'
+        
+        echo "✅ OCI CLI setup successful"
+    
+    - name: Configure kubectl for OKE
+      run: |
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+          --file ~/.kube/config \
+          --region '${{ secrets.OCI_REGION }}' \
+          --token-version 2.0.0
+        
+        echo "✅ Kubectl configured"
+    
+    - name: Test kubectl connection
+      run: |
+        kubectl get nodes
+        echo "✅ Connected to OKE cluster"
