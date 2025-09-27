@@ -15,7 +15,7 @@ jobs:
       uses: oracle-actions/configure-kubectl-oke@v1.3.2
       with:
         cluster: ${{ secrets.OKE_CLUSTER_OCID }}
-        region: ${{ secrets.OCI_CLI_REGION }}
+#        region: ${{ secrets.OCI_CLI_REGION }}
     
     - name: Deploy application
       run: kubectl apply -f k8s/
