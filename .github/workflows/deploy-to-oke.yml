@@ -7,53 +7,53 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-      OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_KEY_FILE }}
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Setup OCI CLI with environment variables
+    - name: Setup OCI CLI
       run: |
         # Install OCI CLI
         bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
         export PATH="$HOME/bin:$PATH"
         echo "$HOME/bin" >> $GITHUB_PATH
         
-        # Create private key file
+        # Create private key
         mkdir -p ~/.oci
-        echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/key.pem
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
         
-        # Set the key file path for OCI CLI
-        export OCI_CLI_KEY_FILE="$HOME/.oci/key.pem"
-        echo "OCI_CLI_KEY_FILE=$HOME/.oci/key.pem" >> $GITHUB_ENV
+        # Export all environment variables for subsequent commands
+        echo "export OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}'" >> ~/.bashrc
+        echo "export OCI_CLI_FINGERPRINT='${{ secrets.OCI_CLI_FINGERPRINT }}'" >> ~/.bashrc
+        echo "export OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}'" >> ~/.bashrc
+        echo "export OCI_CLI_REGION='${{ secrets.OCI_REGION }}'" >> ~/.bashrc
+        echo "export OCI_CLI_KEY_FILE='$HOME/.oci/key.pem'" >> ~/.bashrc
         
-        # Test OCI connection (uses environment variables)
-        $HOME/bin/oci iam user get --user-id "$OCI_CLI_USER" --query 'data.name'
+        # Source the environment
+        source ~/.bashrc
         
-        echo "✅ OCI CLI setup successful"
+        # Test connection
+        OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}' \
+        OCI_CLI_FINGERPRINT='${{ secrets.OCI_FINGERPRINT }}' \
+        OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}' \
+        OCI_CLI_REGION='${{ secrets.OCI_REGION }}' \
+        OCI_CLI_KEY_FILE="$HOME/.oci/key.pem" \
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
     
-    - name: Configure kubectl for OKE
+    - name: Configure kubectl
       run: |
-        # Configure kubectl using environment variables
         mkdir -p ~/.kube
+        OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}' \
+        OCI_CLI_FINGERPRINT='${{ secrets.OCI_CLI_FINGERPRINT }}' \
+        OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}' \
+        OCI_CLI_REGION='${{ secrets.OCI_REGION }}' \
+        OCI_CLI_KEY_CONTENT="$HOME/.oci/key.pem" \
         $HOME/bin/oci ce cluster create-kubeconfig \
           --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
           --file ~/.kube/config \
-          --region "$OCI_CLI_REGION" \
+          --region '${{ secrets.OCI_REGION }}' \
           --token-version 2.0.0
-        
-        echo "✅ Kubectl configured successfully"
     
-    - name: Test kubectl connection
-      run: |
-        kubectl version --client
-        kubectl cluster-info
-        kubectl get nodes
-        
-        echo "✅ Connection to OKE cluster successful"
+    - name: Test kubectl
+      run: kubectl get nodes
