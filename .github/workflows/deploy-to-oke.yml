@@ -1,14 +1,38 @@
-name: Test Secrets
+name: Deploy to OKE
 
 on:
   push:
     branches: [main]
 
 jobs:
-  test:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-    - name: Test Fingerprint
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup OCI CLI
       run: |
-        echo "Fingerprint length: $(echo '${{ secrets.OCI_CLI_FINGERPRINT}}' | wc -c)"
-        echo "Fingerprint value: ${{ secrets.OCI_CLI_FINGERPRINT}}"
+        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "$HOME/bin" >> $GITHUB_PATH
+        mkdir -p ~/.oci
+        cat > ~/.oci/config << EOL
+        [DEFAULT]
+        user=${{ secrets.OCI_USER_OCID }}
+        fingerprint=${{ secrets.OCI_FINGERPRINT }}
+        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOL
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        chmod 600 ~/.oci/config
+    
+    - name: Configure kubectl for OKE
+      run: |
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} --file ~/.kube/config --region ${{ secrets.OCI_REGION }} --token-version 2.0.0
+    
+    - name: Test kubectl connection
+      run: kubectl get nodes
