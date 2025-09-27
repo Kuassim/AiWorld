@@ -22,7 +22,7 @@ jobs:
         mkdir -p ~/.oci
         
         # Create private key file
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
         
         # Generate fingerprint from the actual private key
