@@ -35,7 +35,7 @@ jobs:
         
         # Test connection
         OCI_CLI_USER='${{ secrets.OCI_CLI_USER }}' \
-        OCI_CLI_FINGERPRINT='${{ secrets.OCI_FINGERPRINT }}' \
+        OCI_CLI_FINGERPRINT='${{ secrets.OCI_CLI_FINGERPRINT }}' \
         OCI_CLI_TENANCY='${{ secrets.OCI_CLI_TENANCY }}' \
         OCI_CLI_REGION='${{ secrets.OCI_REGION }}' \
         OCI_CLI_KEY_FILE="$HOME/.oci/key.pem" \
