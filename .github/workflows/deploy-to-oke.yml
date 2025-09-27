@@ -19,9 +19,9 @@ jobs:
         mkdir -p ~/.oci
         cat > ~/.oci/config << EOL
         [DEFAULT]
-        user=${{ secrets.OCI_USER_OCID }}
+        user=${{ secrets.OCI_CLI_USER }}
         fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
-        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
         EOL
