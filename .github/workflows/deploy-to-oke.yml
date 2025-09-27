@@ -6,16 +6,24 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+    
+    - name: Configure OCI CLI
+      uses: oracle-actions/configure-oci-cli@v1.3.0
+      with:
+        user: ${{ secrets.OCI_USER_OCID }}
+        tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+        region: ${{ secrets.OCI_CLI_REGION }}
+        fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+        key: ${{ secrets.OCI_KEY_FILE }}
     
     - name: Configure kubectl for OKE
       uses: oracle-actions/configure-kubectl-oke@v1.3.2
       with:
         cluster: ${{ secrets.OKE_CLUSTER_OCID }}
-#        region: ${{ secrets.OCI_CLI_REGION }}
     
-    - name: Deploy application
-      run: kubectl apply -f k8s/
+    - name: Test kubectl connection
+      run: kubectl get nodes
