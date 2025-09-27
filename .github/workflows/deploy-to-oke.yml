@@ -20,7 +20,7 @@ jobs:
         cat > ~/.oci/config << EOL
         [DEFAULT]
         user=${{ secrets.OCI_USER_OCID }}
-        fingerprint=${{ secrets.OCI_FINGERPRINT }}
+        fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
         tenancy=${{ secrets.OCI_TENANCY_OCID }}
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
