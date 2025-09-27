@@ -10,5 +10,5 @@ jobs:
     steps:
     - name: Test user secret
       run: |
-        echo "Region length: $(echo '${{ secrets.OCI_CLI_USER}}' | wc -c)"
-        echo "Region value: ${{ secrets.OCI_CLI_USER}}"
+        echo "Tenancy length: $(echo '${{ secrets.OCI_CLI_TENANCY}}' | wc -c)"
+        echo "Tenancy value: ${{ secrets.OCI_CLI_TENANCY}}"
