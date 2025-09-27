@@ -11,13 +11,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Debug secret formats (safe)
-      run: |
-        echo "User OCID starts with: $(echo '${{ secrets.OCI_USER_OCID }}' | cut -c1-20)..."
-        echo "Tenancy OCID starts with: $(echo '${{ secrets.OCI_TENANCY_OCID }}' | cut -c1-20)..."
-        echo "Fingerprint format: $(echo '${{ secrets.OCI_FINGERPRINT }}' | wc -c) characters"
-        echo "Region: ${{ secrets.OCI_REGION }}"
-    
     - name: Setup OCI CLI
       run: |
         bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
@@ -36,9 +29,19 @@ jobs:
         chmod 600 ~/.oci/key.pem
         chmod 600 ~/.oci/config
     
-    - name: Validate OCI config
+    - name: Debug config file
       run: |
-        echo "Config file contents (without sensitive data):"
-        sed 's/ocid1\.[^.]*\.oc1\.[^=]*=.*/[REDACTED OCID]/' ~/.oci/config
-        $HOME/bin/oci setup repair-file-permissions --file ~/.oci/config
-        $HOME/bin/oci setup repair-file-permissions --file ~/.oci/key.pem
+        echo "=== Config file exists? ==="
+        ls -la ~/.oci/
+        echo "=== Config file contents (sanitized) ==="
+        cat ~/.oci/config | sed 's/ocid1\.[^=]*$/[REDACTED]/'
+        echo "=== Check for special characters ==="
+        hexdump -C ~/.oci/config | head -20
+    
+    - name: Configure kubectl for OKE
+      run: |
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} --file ~/.kube/config --region ${{ secrets.OCI_REGION }} --token-version 2.0.0
+    
+    - name: Test kubectl connection
+      run: kubectl get nodes
