@@ -11,33 +11,37 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Setup OCI CLI with environment variables
-      env:
-        OCI_CLI_USER: ${{ secrets.OCI_USER_OCID }}
-        OCI_CLI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
-        OCI_CLI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
-        OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
-        OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_KEY_FILE }}
+    - name: Setup OCI CLI and Configure kubectl
       run: |
         # Install OCI CLI
         bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
         export PATH="$HOME/bin:$PATH"
-        echo "$HOME/bin" >> $GITHUB_PATH
+        
+        # Create OCI config
+        mkdir -p ~/.oci
+        cat > ~/.oci/config << 'EOL'
+        [DEFAULT]
+        user=${{ secrets.OCI_USER_OCID }}
+        fingerprint=${{ secrets.OCI_FINGERPRINT }}
+        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=/home/runner/.oci/key.pem
+        EOL
         
         # Create private key file
-        mkdir -p ~/.oci
-        echo "$OCI_CLI_KEY_CONTENT" > ~/.oci/key.pem
+        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
+        chmod 600 ~/.oci/config
         
-        # Test connection using environment variables
-        $HOME/bin/oci iam user get --user-id $OCI_CLI_USER --query 'data.name'
+        # Test OCI connection
+        $HOME/bin/oci iam user get --user-id ${{ secrets.OCI_USER_OCID }} --query 'data.name'
         
         # Configure kubectl
         mkdir -p ~/.kube
         $HOME/bin/oci ce cluster create-kubeconfig \
           --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
           --file ~/.kube/config \
-          --region $OCI_CLI_REGION \
+          --region ${{ secrets.OCI_REGION }} \
           --token-version 2.0.0
     
     - name: Test kubectl connection
