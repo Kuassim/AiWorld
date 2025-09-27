@@ -1,48 +1,43 @@
-name: Deploy to OKE
+name: Debug OCI Secrets
 
 on:
   push:
     branches: [main]
 
 jobs:
-  deploy:
+  debug:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Setup OCI CLI and Configure kubectl
+    - name: Debug secret formats
       run: |
-        # Install OCI CLI
-        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
-        export PATH="$HOME/bin:$PATH"
+        echo "=== Checking secret formats ==="
+        echo "User OCID length: $(echo '${{ secrets.OCI_USER_OCID }}' | wc -c)"
+        echo "User OCID starts with: $(echo '${{ secrets.OCI_USER_OCID }}' | head -c 20)"
+        echo "Tenancy OCID length: $(echo '${{ secrets.OCI_TENANCY_OCID }}' | wc -c)"
+        echo "Tenancy OCID starts with: $(echo '${{ secrets.OCI_TENANCY_OCID }}' | head -c 20)"
+        echo "Fingerprint length: $(echo '${{ secrets.OCI_FINGERPRINT }}' | wc -c)"
+        echo "Fingerprint: ${{ secrets.OCI_FINGERPRINT }}"
+        echo "Region: ${{ secrets.OCI_REGION }}"
+        echo "Private key starts with: $(echo '${{ secrets.OCI_KEY_FILE }}' | head -c 30)"
         
-        # Create OCI config
-        mkdir -p ~/.oci
-        cat > ~/.oci/config << 'EOL'
-        [DEFAULT]
-        user=${{ secrets.OCI_USER_OCID }}
-        fingerprint=${{ secrets.OCI_FINGERPRINT }}
-        tenancy=${{ secrets.OCI_TENANCY_OCID }}
-        region=${{ secrets.OCI_REGION }}
-        key_file=/home/runner/.oci/key.pem
-        EOL
+        echo "=== Testing OCID format validation ==="
+        if [[ '${{ secrets.OCI_USER_OCID }}' =~ ^ocid1\.user\.oc1\. ]]; then
+          echo "✅ User OCID format looks correct"
+        else
+          echo "❌ User OCID format is WRONG"
+        fi
         
-        # Create private key file
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
-        chmod 600 ~/.oci/key.pem
-        chmod 600 ~/.oci/config
+        if [[ '${{ secrets.OCI_TENANCY_OCID }}' =~ ^ocid1\.tenancy\.oc1\. ]]; then
+          echo "✅ Tenancy OCID format looks correct"
+        else
+          echo "❌ Tenancy OCID format is WRONG"
+        fi
         
-        # Test OCI connection
-        $HOME/bin/oci iam user get --user-id ${{ secrets.OCI_USER_OCID }} --query 'data.name'
-        
-        # Configure kubectl
-        mkdir -p ~/.kube
-        $HOME/bin/oci ce cluster create-kubeconfig \
-          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
-          --file ~/.kube/config \
-          --region ${{ secrets.OCI_REGION }} \
-          --token-version 2.0.0
-    
-    - name: Test kubectl connection
-      run: kubectl get nodes
+        if [[ '${{ secrets.OCI_FINGERPRINT }}' =~ ^[a-f0-9]{2}(:[a-f0-9]{2}){15}$ ]]; then
+          echo "✅ Fingerprint format looks correct"
+        else
+          echo "❌ Fingerprint format is WRONG"
+        fi
