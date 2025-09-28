@@ -30,9 +30,9 @@ jobs:
         # Create config with fresh key
         cat > ~/.oci/config << EOF
         [DEFAULT]
-        user=${{ secrets.OCI_USER_OCID }}
+        user=${{ secrets.OCI_CLI_USER }}
         fingerprint=${FINGERPRINT}
-        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
         EOF
@@ -61,7 +61,7 @@ jobs:
         
         # Test if key works (will fail first time until uploaded)
         echo "🧪 Testing OCI connection..."
-        if $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_USER_OCID }}' --query 'data.name' 2>/dev/null; then
+	if $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name' 2>/dev/null; then
           echo "✅ OCI authentication successful!"
         else
           echo "⚠️  Expected: Authentication failed (key not uploaded to OCI yet)"
