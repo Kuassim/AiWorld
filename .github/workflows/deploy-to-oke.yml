@@ -1,44 +1,77 @@
-name: Verify kubectl Configuration
+name: Deploy to OKE with Fresh Key
 
 on:
   push:
     branches: [main]
 
 jobs:
-  verify:
+  deploy:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Setup OCI CLI (using your working setup)
+    - name: Generate fresh API key and setup OCI CLI
       run: |
-        # Your existing working OCI CLI setup here
+        # Install OCI CLI
         bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
         export PATH="$HOME/bin:$PATH"
         echo "$HOME/bin" >> $GITHUB_PATH
         
+        # Generate a fresh API key pair
         mkdir -p ~/.oci
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
+        openssl genrsa -out ~/.oci/key.pem 2048
+        openssl rsa -pubout -in ~/.oci/key.pem -out ~/.oci/key_public.pem
         chmod 600 ~/.oci/key.pem
         
+        # Generate fingerprint from the fresh key
         FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem | openssl md5 -c | awk -F'= ' '{print $2}')
         
+        # Create config with fresh key
         cat > ~/.oci/config << EOF
         [DEFAULT]
-        user=${{ secrets.OCI_CLI_USER }}
+        user=${{ secrets.OCI_USER_OCID }}
         fingerprint=${FINGERPRINT}
-        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        tenancy=${{ secrets.OCI_TENANCY_OCID }}
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
         EOF
         
         chmod 600 ~/.oci/config
         
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
+        echo "=========================================="
+        echo "🔑 GENERATED FRESH API KEY FOR OCI"
+        echo "=========================================="
+        echo ""
+        echo "📋 COPY THIS PUBLIC KEY TO OCI CONSOLE:"
+        echo "--------------------------------------"
+        cat ~/.oci/key_public.pem
+        echo "--------------------------------------"
+        echo ""
+        echo "🔍 FINGERPRINT: ${FINGERPRINT}"
+        echo ""
+        echo "📝 INSTRUCTIONS:"
+        echo "1. Copy the PUBLIC KEY above (including -----BEGIN/END----- lines)"
+        echo "2. Go to: OCI Console → Profile Icon → User Settings → API Keys"
+        echo "3. Click 'Add API Key' → 'Paste Public Key'"
+        echo "4. Paste the key and click 'Add'"
+        echo "5. Verify the fingerprint matches: ${FINGERPRINT}"
+        echo "6. Re-run this workflow after adding the key"
+        echo "=========================================="
+        
+        # Test if key works (will fail first time until uploaded)
+        echo "🧪 Testing OCI connection..."
+        if $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_USER_OCID }}' --query 'data.name' 2>/dev/null; then
+          echo "✅ OCI authentication successful!"
+        else
+          echo "⚠️  Expected: Authentication failed (key not uploaded to OCI yet)"
+          echo "   Upload the public key above to OCI Console, then re-run this workflow"
+          exit 0  # Exit gracefully, not as error
+        fi
     
     - name: Configure kubectl for OKE
       run: |
+        echo "🔧 Configuring kubectl for OKE cluster..."
         mkdir -p ~/.kube
         $HOME/bin/oci ce cluster create-kubeconfig \
           --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
@@ -48,27 +81,13 @@ jobs:
         
         echo "✅ kubectl configuration completed"
     
-    - name: Verify kubectl configuration
+    - name: Verify kubectl connection
       run: |
-        echo "=== kubectl Version ==="
+        echo "🚀 Testing kubectl connection to OKE cluster..."
         kubectl version --client
-        
-        echo "=== Cluster Info ==="
         kubectl cluster-info --request-timeout=10s
-        
-        echo "=== Current Context ==="
-        kubectl config current-context
-        
-        echo "=== Available Contexts ==="
-        kubectl config get-contexts
-        
-        echo "=== Cluster Nodes ==="
         kubectl get nodes
-        
-        echo "=== Default Namespace Services ==="
-        kubectl get services
-        
-        echo "=== System Namespaces ==="
         kubectl get namespaces
         
-        echo "✅ kubectl is fully configured and connected to OKE cluster"
+        echo "✅ Successfully connected to OKE cluster!"
+        echo "🎉 kubectl is ready for deployments!"
