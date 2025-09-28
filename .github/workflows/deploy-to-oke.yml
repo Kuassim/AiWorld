@@ -1,63 +1,45 @@
-name: Deploy to OKE
+name: Debug Private Key
 
 on:
   push:
     branches: [main]
 
 jobs:
-  deploy:
+  debug:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Setup OCI CLI with valid dummy config
+    - name: Debug private key format
       run: |
-        # Install OCI CLI
-        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
-        export PATH="$HOME/bin:$PATH"
-        echo "$HOME/bin" >> $GITHUB_PATH
+        echo "=== Debugging private key format ==="
         
-        # Create OCI directory
+        # Create key file
         mkdir -p ~/.oci
-        
-        # Create private key file
-        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
         
-        # Generate fingerprint from the actual private key
-        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
-        echo "Generated fingerprint: $FINGERPRINT"
+        # Check key file size
+        echo "Key file size: $(wc -c < ~/.oci/key.pem) bytes"
         
-        # Create valid config file with generated fingerprint
-        cat > ~/.oci/config << EOF
-        [DEFAULT]
-        user=${{ secrets.OCI_CLI_USER }}
-        fingerprint=${FINGERPRINT}
-        tenancy=${{ secrets.OCI_CLI_TENANCY }}
-        region=${{ secrets.OCI_REGION }}
-        key_file=$HOME/.oci/key.pem
-        EOF
+        # Check first and last lines
+        echo "First line: $(head -1 ~/.oci/key.pem)"
+        echo "Last line: $(tail -1 ~/.oci/key.pem)"
         
-        chmod 600 ~/.oci/config
+        # Check for Windows line endings
+        if file ~/.oci/key.pem | grep -q CRLF; then
+          echo "❌ Key has Windows line endings"
+        else
+          echo "✅ Key has Unix line endings"
+        fi
         
-        # Test OCI connection
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
+        # Try to validate the key
+        if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
+          echo "✅ Private key is valid"
+        else
+          echo "❌ Private key is invalid"
+          echo "OpenSSL error:"
+          openssl rsa -check -noout -in ~/.oci/key.pem
+        fi
         
-        echo "✅ OCI CLI setup successful"
-    
-    - name: Configure kubectl for OKE
-      run: |
-        mkdir -p ~/.kube
-        $HOME/bin/oci ce cluster create-kubeconfig \
-          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
-          --file ~/.kube/config \
-          --region '${{ secrets.OCI_REGION }}' \
-          --token-version 2.0.0
-        
-        echo "✅ Kubectl configured"
-    
-    - name: Test kubectl connection
-      run: |
-        kubectl get nodes
-        echo "✅ Connected to OKE cluster"
+        # Show key structure (without revealing content)
+        echo "Key structure:"
+        grep -E "^-----" ~/.oci/key.pem || echo "No PEM headers found"
