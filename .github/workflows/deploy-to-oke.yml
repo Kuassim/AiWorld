@@ -1,45 +1,43 @@
-name: Debug Private Key
+name: Generate Fresh OCI Key
 
 on:
   push:
     branches: [main]
 
 jobs:
-  debug:
+  generate:
     runs-on: ubuntu-latest
     steps:
-    - name: Debug private key format
+    - name: Generate fresh API key pair
       run: |
-        echo "=== Debugging private key format ==="
+        # Generate new key pair
+        mkdir -p ~/fresh-keys
+        openssl genrsa -out ~/fresh-keys/oci_api_key.pem 2048
+        openssl rsa -pubout -in ~/fresh-keys/oci_api_key.pem -out ~/fresh-keys/oci_api_key_public.pem
         
-        # Create key file
-        mkdir -p ~/.oci
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
-        chmod 600 ~/.oci/key.pem
+        # Get fingerprint
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/fresh-keys/oci_api_key.pem | openssl md5 -c | awk -F'= ' '{print $2}')
         
-        # Check key file size
-        echo "Key file size: $(wc -c < ~/.oci/key.pem) bytes"
-        
-        # Check first and last lines
-        echo "First line: $(head -1 ~/.oci/key.pem)"
-        echo "Last line: $(tail -1 ~/.oci/key.pem)"
-        
-        # Check for Windows line endings
-        if file ~/.oci/key.pem | grep -q CRLF; then
-          echo "❌ Key has Windows line endings"
-        else
-          echo "✅ Key has Unix line endings"
-        fi
-        
-        # Try to validate the key
-        if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
-          echo "✅ Private key is valid"
-        else
-          echo "❌ Private key is invalid"
-          echo "OpenSSL error:"
-          openssl rsa -check -noout -in ~/.oci/key.pem
-        fi
-        
-        # Show key structure (without revealing content)
-        echo "Key structure:"
-        grep -E "^-----" ~/.oci/key.pem || echo "No PEM headers found"
+        echo "=== NEW API KEY PAIR GENERATED ==="
+        echo ""
+        echo "1. PRIVATE KEY (for GitHub secret OCI_KEY_FILE):"
+        echo "================================================"
+        cat ~/fresh-keys/oci_api_key.pem
+        echo "================================================"
+        echo ""
+        echo "2. PUBLIC KEY (upload to OCI Console):"
+        echo "======================================"
+        cat ~/fresh-keys/oci_api_key_public.pem
+        echo "======================================"
+        echo ""
+        echo "3. FINGERPRINT (for GitHub secret OCI_FINGERPRINT):"
+        echo "=================================================="
+        echo "$FINGERPRINT"
+        echo "=================================================="
+        echo ""
+        echo "NEXT STEPS:"
+        echo "1. Copy the PRIVATE KEY above to GitHub secret: OCI_KEY_FILE"
+        echo "2. Copy the FINGERPRINT above to GitHub secret: OCI_FINGERPRINT"  
+        echo "3. Go to OCI Console → Profile → User Settings → API Keys"
+        echo "4. Add API Key → Paste the PUBLIC KEY above"
+        echo "5. Verify the fingerprint in OCI matches: $FINGERPRINT"
