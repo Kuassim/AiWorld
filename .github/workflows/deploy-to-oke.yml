@@ -1,32 +1,31 @@
-name: Debug OCI Authentication
+name: Deploy to OKE - Working Method
 
 on:
   push:
     branches: [main]
 
 jobs:
-  debug:
+  deploy:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
     
-    - name: Generate fresh key and debug authentication
+    - name: Setup OCI CLI with GitHub secrets
       run: |
         # Install OCI CLI
         bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
         export PATH="$HOME/bin:$PATH"
         echo "$HOME/bin" >> $GITHUB_PATH
         
-        # Generate fresh key
+        # Use your existing GitHub secrets
         mkdir -p ~/.oci
-        openssl genrsa -out ~/.oci/key.pem 2048
-        openssl rsa -pubout -in ~/.oci/key.pem -out ~/.oci/key_public.pem
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
         
-        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem | openssl md5 -c | awk -F'= ' '{print $2}')
+        # Generate fingerprint from your actual key
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
         
-        # Create config
         cat > ~/.oci/config << EOF
         [DEFAULT]
         user=${{ secrets.OCI_CLI_USER }}
@@ -35,25 +34,31 @@ jobs:
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
         EOF
+        
         chmod 600 ~/.oci/config
         
-        echo "=== GENERATED KEY INFO ==="
-        echo "Public Key:"
-        cat ~/.oci/key_public.pem
-        echo ""
-        echo "Fingerprint: $FINGERPRINT"
-        echo "=========================="
+        echo "Using fingerprint: $FINGERPRINT"
         
-        echo "=== TESTING BASIC OCI CONNECTION ==="
-        echo "User OCID: ${{ secrets.OCI_CLI_USER }}"
-        echo "Region: ${{ secrets.OCI_REGION }}"
+        # Test OCI connection
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
         
-        # Test basic connection
-        echo "Testing user lookup..."
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' || echo "❌ User lookup failed"
+        echo "✅ OCI CLI authentication successful"
+    
+    - name: Configure kubectl for OKE
+      run: |
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+          --file ~/.kube/config \
+          --region '${{ secrets.OCI_REGION }}' \
+          --token-version 2.0.0
         
-        echo "Testing region list..."
-        $HOME/bin/oci iam region list --output table || echo "❌ Region list failed"
+        echo "✅ kubectl configured"
+    
+    - name: Test kubectl connection
+      run: |
+        kubectl version --client
+        kubectl cluster-info --request-timeout=10s
+        kubectl get nodes
         
-        echo "Testing tenancy info..."
-        $HOME/bin/oci iam tenancy get --tenancy-id '${{ secrets.OCI_CLI_TENANCY }}' || echo "❌ Tenancy lookup failed"
+        echo "✅ Successfully connected to OKE cluster"
