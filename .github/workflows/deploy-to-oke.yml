@@ -26,16 +26,16 @@ jobs:
         
         cat > ~/.oci/config << EOF
         [DEFAULT]
-        user=${{ secrets.OCI_USER_OCID }}
+        user=${{ secrets.OCI_CLI_USER }}
         fingerprint=${FINGERPRINT}
-        tenancy=${{ secrets.OCI_TENANCY_OCID }}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
         region=${{ secrets.OCI_REGION }}
         key_file=$HOME/.oci/key.pem
         EOF
         
         chmod 600 ~/.oci/config
         
-        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_USER_OCID }}' --query 'data.name'
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
     
     - name: Configure kubectl for OKE
       run: |
