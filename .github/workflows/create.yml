@@ -32,9 +32,9 @@ jobs:
       run: |-
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
         chmod u+x ./kustomize
-- name: Setup OCI CLI and Configure kubectl
-  run: |
-    echo "=== Starting OCI CLI setup ==="
+    - name: Setup OCI CLI and Configure kubectl
+      run: |
+      echo "=== Starting OCI CLI setup ==="
     
     # Install OCI CLI
     bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
