@@ -32,37 +32,66 @@ jobs:
       run: |-
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
         chmod u+x ./kustomize
-
-    # Setup OCI CLI and Configure kubectl (using your working method)
-    - name: Setup OCI CLI and Configure kubectl
-      run: |
-        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
-        export PATH="$HOME/bin:$PATH"
-        echo "$HOME/bin" >> $GITHUB_PATH
-        
-        mkdir -p ~/.oci
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
-        chmod 600 ~/.oci/key.pem
-        
-        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
-        
-        cat > ~/.oci/config << EOF
-        [DEFAULT]
-        user=${{ secrets.OCI_CLI_USER }}
-        fingerprint=${FINGERPRINT}
-        tenancy=${{ secrets.OCI_CLI_TENANCY }}
-        region=${{ secrets.OCI_REGION }}
-        key_file=$HOME/.oci/key.pem
-        EOF
-        
-        chmod 600 ~/.oci/config
-        
-        mkdir -p ~/.kube
-        $HOME/bin/oci ce cluster create-kubeconfig \
-          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
-          --file ~/.kube/config \
-          --region '${{ secrets.OCI_REGION }}' \
-          --token-version 2.0.0
+- name: Setup OCI CLI and Configure kubectl
+  run: |
+    echo "=== Starting OCI CLI setup ==="
+    
+    # Install OCI CLI
+    bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+    export PATH="$HOME/bin:$PATH"
+    echo "$HOME/bin" >> $GITHUB_PATH
+    
+    echo "✅ OCI CLI installed"
+    
+    # Setup OCI config
+    mkdir -p ~/.oci
+    echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+    chmod 600 ~/.oci/key.pem
+    
+    echo "✅ Key file created"
+    
+    # Validate key
+    if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
+      echo "✅ Private key is valid"
+    else
+      echo "❌ Private key is invalid"
+      exit 1
+    fi
+    
+    # Generate fingerprint
+    FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+    echo "Generated fingerprint: $FINGERPRINT"
+    
+    # Create config
+    cat > ~/.oci/config << EOF
+    [DEFAULT]
+    user=${{ secrets.OCI_CLI_USER }}
+    fingerprint=${FINGERPRINT}
+    tenancy=${{ secrets.OCI_CLI_TENANCY }}
+    region=${{ secrets.OCI_REGION }}
+    key_file=$HOME/.oci/key.pem
+    EOF
+    
+    chmod 600 ~/.oci/config
+    
+    echo "✅ OCI config created"
+    
+    # Test OCI connection
+    echo "Testing OCI authentication..."
+    $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
+    
+    echo "✅ OCI authentication successful"
+    
+    # Configure kubectl
+    echo "Configuring kubectl..."
+    mkdir -p ~/.kube
+    $HOME/bin/oci ce cluster create-kubeconfig \
+      --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+      --file ~/.kube/config \
+      --region '${{ secrets.OCI_REGION }}' \
+      --token-version 2.0.0
+    
+    echo "✅ kubectl configured successfully"
 
     # Test access
     - name: Check Nodes
