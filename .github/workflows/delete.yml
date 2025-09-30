@@ -29,7 +29,7 @@ jobs:
         export PATH="$HOME/bin:$PATH"
         echo "$HOME/bin" >> $GITHUB_PATH
         mkdir -p ~/.oci
-        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
         chmod 600 ~/.oci/key.pem
         FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
         cat > ~/.oci/config << EOF
