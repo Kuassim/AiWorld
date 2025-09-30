@@ -1,10 +1,10 @@
-
 name: Create Isolated Database
 
 on:
-  create:
+  push:
     branches: 
       - 'feature/**'
+  workflow_dispatch:  # Allows manual triggering from GitHub UI
 
 jobs:
   create:
@@ -12,13 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OP_DEF_PWD: ${{ secrets.FT_DEFAULT_ADMIN_PASSWORD }}
-      BRANCH_REF: ${{ github.event.ref }}
+      BRANCH_REF: ${{ github.ref }}
       COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
-      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
 
     outputs:
       idname: ${{ steps.getname.outputs.idname }}
@@ -38,19 +33,42 @@ jobs:
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
         chmod u+x ./kustomize
 
-    # Get the GKE credentials so we can deploy to the cluster
-    - name: Configure Kubectl
-      uses: oracle-actions/configure-kubectl-oke@v1.3.2
-      id: test-configure-kubectl-oke-action
-      with:
-        cluster: ${{ secrets.OKE_CLUSTER_OCID }}
+    # Setup OCI CLI and Configure kubectl (using your working method)
+    - name: Setup OCI CLI and Configure kubectl
+      run: |
+        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "$HOME/bin" >> $GITHUB_PATH
+        
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+        
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_CLI_USER }}
+        fingerprint=${FINGERPRINT}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOF
+        
+        chmod 600 ~/.oci/config
+        
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+          --file ~/.kube/config \
+          --region '${{ secrets.OCI_REGION }}' \
+          --token-version 2.0.0
 
     # Test access
     - name: Check Nodes
       run: kubectl get nodes -A
 
-
-     # Create Namespace and Secret
+    # Create Namespace and Secret
     - name: Create Kubernetes resources
       run: |-
         kubectl create namespace feature-${{ steps.getname.outputs.idname }}
@@ -74,7 +92,6 @@ jobs:
       id: getaddress
       run: echo "ipaddress=$(kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o 'jsonpath={.status.pdbConnectString}')" >> "$GITHUB_OUTPUT"
 
-  # Setup DB Schemas/Users
   setup_users:
     name: Setup Database Schemas
     runs-on: ubuntu-latest
@@ -90,7 +107,6 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    # Run LB as system
     - name: "Run LB as system"
       uses: liquibase-github-actions/update@v4.23.2
       with:
@@ -100,12 +116,10 @@ jobs:
         password: ${{ env.DB_PWD }}
         searchPath: "/github/workspace/liquibase/admin"
         
-    # List Schemas
     - name: "List Schemas to Loop Through"
       id: getschemas
       run: echo "schemas=$(python scripts/run_util.py schemas liquibase)" >> "$GITHUB_OUTPUT"
 
-  # Setup Tables
   setup_tables:
     name: Setup Database Tables
     runs-on: ubuntu-latest
