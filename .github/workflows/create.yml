@@ -4,7 +4,7 @@ on:
   push:
     branches: 
       - 'feature/**'
-  workflow_dispatch:  # Allows manual triggering from GitHub UI
+  workflow_dispatch:
 
 jobs:
   create:
@@ -27,94 +27,70 @@ jobs:
       id: getname
       run: echo "idname=$(python scripts/run_util.py id "$BRANCH_REF")" >> "$GITHUB_OUTPUT"
 
-    # Set up kustomize
     - name: Set up Kustomize
       run: |
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
         chmod u+x ./kustomize
-- name: Setup OCI CLI and Configure kubectl
-  run: |
-    echo "=== Starting OCI CLI setup ==="
-    
-    # Install OCI CLI
-    bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
-    export PATH="$HOME/bin:$PATH"
-    echo "$HOME/bin" >> $GITHUB_PATH
-    
-    echo "✅ OCI CLI installed"
-    
-    # Setup OCI config
-    mkdir -p ~/.oci
-    echo "${{ secrets.OCI_KEY_FILE }}" > ~/.oci/key.pem
-    chmod 600 ~/.oci/key.pem
-    
-    echo "✅ Key file created"
-    
-    # Validate key
-    if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
-      echo "✅ Private key is valid"
-    else
-      echo "❌ Private key is invalid"
-      exit 1
-    fi
-    
-    # Generate fingerprint
-    FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
-    echo "Generated fingerprint: $FINGERPRINT"
-    
-    # Create config
-    cat > ~/.oci/config << EOF
-    [DEFAULT]
-    user=${{ secrets.OCI_CLI_USER }}
-    fingerprint=${FINGERPRINT}
-    tenancy=${{ secrets.OCI_CLI_TENANCY }}
-    region=${{ secrets.OCI_REGION }}
-    key_file=$HOME/.oci/key.pem
-    EOF
-    
-    chmod 600 ~/.oci/config
-    
-    echo "✅ OCI config created"
-    
-    # Test OCI connection
-    echo "Testing OCI authentication..."
-    $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
-    
-    echo "✅ OCI authentication successful"
-    
-    # Configure kubectl
-    echo "Configuring kubectl..."
-    mkdir -p ~/.kube
-    $HOME/bin/oci ce cluster create-kubeconfig \
-      --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
-      --file ~/.kube/config \
-      --region '${{ secrets.OCI_REGION }}' \
-      --token-version 2.0.0
-    
-    echo "✅ kubectl configured successfully"
-    # Test access
+
+    - name: Setup OCI CLI and Configure kubectl
+      run: |
+        echo "=== Starting OCI CLI setup ==="
+        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "$HOME/bin" >> $GITHUB_PATH
+        echo "✅ OCI CLI installed"
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        echo "✅ Key file created"
+        if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
+          echo "✅ Private key is valid"
+        else
+          echo "❌ Private key is invalid"
+          exit 1
+        fi
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+        echo "Generated fingerprint: $FINGERPRINT"
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_CLI_USER }}
+        fingerprint=${FINGERPRINT}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOF
+        chmod 600 ~/.oci/config
+        echo "✅ OCI config created"
+        echo "Testing OCI authentication..."
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
+        echo "✅ OCI authentication successful"
+        echo "Configuring kubectl..."
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+          --file ~/.kube/config \
+          --region '${{ secrets.OCI_REGION }}' \
+          --token-version 2.0.0
+        echo "✅ kubectl configured successfully"
+
     - name: Check Nodes
       run: kubectl get nodes -A
 
-    # Create Namespace and Secret
     - name: Create Kubernetes resources
-      run: |-
+      run: |
         kubectl create namespace feature-${{ steps.getname.outputs.idname }}
         kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic default-admin-password --from-literal=oracle_pwd="$OP_DEF_PWD"
 
-    # Run Kustomize and Deploy
     - name: Deploy SIDB
-      run: |-
+      run: |
         kustomize create --resources base/sidb-free-lite
         kustomize edit set namesuffix ${{ steps.getname.outputs.idname }}
         kustomize edit set namespace feature-${{ steps.getname.outputs.idname }}
         kustomize build . | kubectl apply -f -
 
-    # Wait for database to get ready
     - name: Wait for Database
       id: getready
-      run: |-
-        ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
+      run: ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
     
     - name: Retrieve IP
       id: getaddress
@@ -135,7 +111,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    - name: "Run LB as system"
+    - name: Run LB as system
       uses: liquibase-github-actions/update@v4.23.2
       with:
         changelogFile: "changelog.xml"
@@ -144,7 +120,7 @@ jobs:
         password: ${{ env.DB_PWD }}
         searchPath: "/github/workspace/liquibase/admin"
         
-    - name: "List Schemas to Loop Through"
+    - name: List Schemas to Loop Through
       id: getschemas
       run: echo "schemas=$(python scripts/run_util.py schemas liquibase)" >> "$GITHUB_OUTPUT"
 
@@ -162,7 +138,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
     
-    - name: "Run LB as User"
+    - name: Run LB as User
       uses: liquibase-github-actions/update@v4.23.2
       with:
         changelogFile: "changelog.xml"
