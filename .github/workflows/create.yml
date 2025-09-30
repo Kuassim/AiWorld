@@ -25,8 +25,28 @@ jobs:
 
     - name: Retrieve ID
       id: getname
-      run: echo "idname=$(python scripts/run_util.py id "$BRANCH_REF")" >> "$GITHUB_OUTPUT"
+      run: |
+         FULL_REF="${{ github.ref }}"
+         echo "Full ref: $FULL_REF"
+         BRANCH_NAME="${FULL_REF#refs/heads/}"
+         echo "Branch name: $BRANCH_NAME"
+         if [[ "$BRANCH_NAME" == feature/* ]]; then
+           ID_NAME="${BRANCH_NAME#feature/}"
+           ID_NAME=$(echo "$ID_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+           echo "Generated ID: $ID_NAME"
+           echo "idname=$ID_NAME" >> "$GITHUB_OUTPUT"
+         else
+           echo "❌ Not a feature branch: $BRANCH_NAME"
+           exit 1
+         fi
 
+    - name: Verify ID
+      run: |
+        echo "ID for namespace: ${{ steps.getname.outputs.idname }}"
+        if [ -z "${{ steps.getname.outputs.idname }}" ]; then
+          echo "❌ ERROR: ID is empty!"
+          exit 1
+        fi
     - name: Set up Kustomize
       run: |
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
