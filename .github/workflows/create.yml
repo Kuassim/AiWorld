@@ -141,7 +141,8 @@ jobs:
       id: getready
       run: |
         echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
-        ./scripts/checkdb.sh db-${{ steps.getname.outputs.idname }}
+        echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
+        ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
     
     - name: Retrieve IP
       id: getaddress
