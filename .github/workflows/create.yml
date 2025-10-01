@@ -102,49 +102,41 @@ jobs:
         kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic default-admin-password --from-literal=oracle_pwd="$OP_DEF_PWD"
 
     - name: Deploy SIDB
-      run: |
-        echo "=== Setting up Kustomize configuration ==="
+          run: |
+            echo "=== Setting up Kustomize configuration ==="
         
-        # Navigate to base directory
-        cd base/sidb-free-lite
+            # Create kustomization.yaml in the root directory, NOT inside base/sidb-free-lite
+            cat > kustomization.yaml << EOF
+            apiVersion: kustomize.config.k8s.io/v1beta1
+            kind: Kustomization
         
-        # Show what resources exist
-        echo "Base resources:"
-        ls -la
+            namespace: feature-${{ steps.getname.outputs.idname }}
         
-        # Create a proper kustomization.yaml
-        cat > kustomization.yaml << EOF
-        apiVersion: kustomize.config.k8s.io/v1beta1
-        kind: Kustomization
+            resources:
+              - base/sidb-free-lite
         
-        namespace: feature-${{ steps.getname.outputs.idname }}
+            patches:
+              - patch: |-
+                  - op: replace
+                    path: /metadata/name
+                    value: db-${{ steps.getname.outputs.idname }}
+                target:
+                 kind: SingleInstanceDatabase
+            EOF
         
-        resources:
-          - .
+            echo "=== Kustomization file created ==="
+            cat kustomization.yaml
         
-        patches:
-          - patch: |-
-              - op: replace
-                path: /metadata/name
-                value: db-${{ steps.getname.outputs.idname }}
-            target:
-              kind: SingleInstanceDatabase
-        EOF
+            # Build from root directory
+            echo "=== Building with Kustomize ==="
+            kustomize build .
         
-        echo "=== Kustomization file created ==="
-        cat kustomization.yaml
+            # Apply the configuration
+            echo "=== Applying to cluster ==="
+            kustomize build . | kubectl apply -f -
         
-        # Build and show what will be applied
-        echo "=== Building with Kustomize ==="
-        cd ../..
-        kustomize build base/sidb-free-lite
-        
-        # Apply the configuration
-        echo "=== Applying to cluster ==="
-        kustomize build base/sidb-free-lite | kubectl apply -f -
-        
-        echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
-    
+            echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
+
 
     - name: Wait for Database
       id: getready
