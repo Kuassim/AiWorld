@@ -103,6 +103,50 @@ jobs:
 
     - name: Deploy SIDB
       run: |
+        echo "=== Setting up Kustomize configuration ==="
+    
+        # Navigate to base directory
+        cd base/sidb-free-lite
+    
+        # Show what resources exist
+        echo "Base resources:"
+        ls -la
+    
+        # Create a proper kustomization.yaml
+        cat > kustomization.yaml << EOF
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+    
+        namespace: feature-${{ steps.getname.outputs.idname }}
+    
+        resources:
+          - .
+    
+        patches:
+          - patch: |-
+              - op: replace
+                path: /metadata/name
+                value: db-${{ steps.getname.outputs.idname }}
+            target:
+              kind: SingleInstanceDatabase
+        EOF
+    
+        echo "=== Kustomization file created ==="
+        cat kustomization.yaml
+    
+        # Build and show what will be applied
+        echo "=== Building with Kustomize ==="
+        cd ../..
+        kustomize build base/sidb-free-lite
+    
+        # Apply the configuration
+        echo "=== Applying to cluster ==="
+        kustomize build base/sidb-free-lite | kubectl apply -f -
+    
+        echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
+
+    - name: Deploy SIDB
+      run: |
         kustomize create --resources base/sidb-free-lite
         kustomize edit set namesuffix ${{ steps.getname.outputs.idname }}
         kustomize edit set namespace feature-${{ steps.getname.outputs.idname }}
@@ -110,12 +154,16 @@ jobs:
 
     - name: Wait for Database
       id: getready
-      run: ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
-    
+      run: |
+        echo "Waiting for database: db-${{ steps.getname.outputs.idname }}"
+        ./scripts/checkdb.sh db-${{ steps.getname.outputs.idname }}
+
     - name: Retrieve IP
       id: getaddress
-      run: echo "ipaddress=$(kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o 'jsonpath={.status.pdbConnectString}')" >> "$GITHUB_OUTPUT"
-
+      run: |
+        echo "Retrieving IP for database: db-${{ steps.getname.outputs.idname }}"
+        echo "ipaddress=$(kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o 'jsonpath={.status.pdbConnectString}')" >> "$GITHUB_OUTPUT"
+  
   setup_users:
     name: Setup Database Schemas
     runs-on: ubuntu-latest
