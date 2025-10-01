@@ -11,7 +11,7 @@ while : ; do
         break;
     else
         echo "Checking for DB Availability..."
-        sleep 5;
+        sleep 60;
     fi;
 
 done;
