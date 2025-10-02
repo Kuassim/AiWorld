@@ -14,6 +14,7 @@ jobs:
       OP_DEF_PWD: ${{ secrets.FT_DEFAULT_ADMIN_PASSWORD }}
       BRANCH_REF: ${{ github.ref }}
       COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      SUPPRESS_LABEL_WARNING: True  
 
     outputs:
       idname: ${{ steps.getname.outputs.idname }}
@@ -99,12 +100,11 @@ jobs:
     - name: Create Kubernetes resources
       run: |
         kubectl create namespace feature-${{ steps.getname.outputs.idname }}
-        kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic default-admin-password --from-literal=oracle_pwd="$OP_DEF_PWD"
+        kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
 
     - name: Deploy SIDB
       run: |
         echo "=== Setting up Kustomize configuration ==="
-    
         # Navigate to base directory
         cd base/sidb-free-lite
     
@@ -128,6 +128,7 @@ jobs:
                 path: /metadata/name
                 value: db-${{ steps.getname.outputs.idname }}
             target:
+<<<<<<< HEAD
               kind: SingleInstanceDatabase
         EOF
     
@@ -151,13 +152,20 @@ jobs:
         kustomize edit set namesuffix ${{ steps.getname.outputs.idname }}
         kustomize edit set namespace feature-${{ steps.getname.outputs.idname }}
         kustomize build . | kubectl apply -f -
+        
+        echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
 
     - name: Wait for Database
       id: getready
       run: |
-        echo "Waiting for database: db-${{ steps.getname.outputs.idname }}"
-        ./scripts/checkdb.sh db-${{ steps.getname.outputs.idname }}
-
+        echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
+        echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
+        echo "=== Database Status ==="
+        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o yaml || echo "Database not found yet"
+        echo ""
+        echo "=== Waiting for database to be ready ==="
+        ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
+    
     - name: Retrieve IP
       id: getaddress
       run: |
