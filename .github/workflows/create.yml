@@ -99,8 +99,32 @@ jobs:
 
     - name: Create Kubernetes resources
       run: |
-        kubectl create namespace feature-${{ steps.getname.outputs.idname }} || echo "namespace already exists"
-        kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        echo "=== Checking namespace status ==="
+        # Check if namespace exists and is terminating
+        if kubectl get namespace $NAMESPACE 2>/dev/null; then
+          NAMESPACE_STATUS=$(kubectl get namespace $NAMESPACE -o jsonpath='{.status.phase}')
+          echo "Namespace status: $NAMESPACE_STATUS"
+          
+          if kubectl get namespace $NAMESPACE -o yaml | grep -q 'phase: Terminating'; then
+            echo "⏳ Namespace is terminating, waiting up to 5 minutes for deletion to complete..."
+            kubectl wait --for=delete namespace/$NAMESPACE --timeout=300s || {
+              echo "❌ Timeout: namespace still terminating after 5 minutes"
+              echo "Attempting to force remove finalizers..."
+              kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+              sleep 10
+            }
+          fi
+        fi
+        
+        echo "=== Creating namespace ==="
+        kubectl create namespace $NAMESPACE || echo "✓ Namespace already exists"
+        
+        echo "=== Creating secret ==="
+        kubectl create secret -n $NAMESPACE generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
+        
+        echo "✅ Kubernetes resources created successfully"
 
     - name: Deploy SIDB
       run: |
