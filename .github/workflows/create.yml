@@ -142,7 +142,7 @@ jobs:
       run: |
         echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
         echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
-        kubectl get -n “feature-$IDENTIFICATION” singleinstancedatabase “db-$IDENTIFICATION” >> "$GITHUB_OUTPUT"
+        kubectl get -n “feature-${{ steps.getname.outputs.idname }}” singleinstancedatabase “db-$IDENTIFICATION” >> "$GITHUB_OUTPUT"
         ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
     
     - name: Retrieve IP
