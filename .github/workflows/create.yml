@@ -14,6 +14,7 @@ jobs:
       OP_DEF_PWD: ${{ secrets.FT_DEFAULT_ADMIN_PASSWORD }}
       BRANCH_REF: ${{ github.ref }}
       COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      SUPPRESS_LABEL_WARNING: True  
 
     outputs:
       idname: ${{ steps.getname.outputs.idname }}
@@ -142,7 +143,10 @@ jobs:
       run: |
         echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
         echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
-        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} >> "$GITHUB_OUTPUT"
+        echo "=== Database Status ==="
+        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o yaml || echo "Database not found yet"
+        echo ""
+        echo "=== Waiting for database to be ready ==="
         ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
     
     - name: Retrieve IP
