@@ -97,41 +97,44 @@ jobs:
     - name: Check Nodes
       run: kubectl get nodes -A
 
-    - name: Force delete stuck namespace
+    - name: Force delete stuck namespace and resources
       run: |
         NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
         
-        echo "=== Checking for stuck namespace ==="
         if kubectl get namespace $NAMESPACE 2>/dev/null | grep -q Terminating; then
-          echo "Namespace is stuck in Terminating state"
+          echo "Namespace stuck in Terminating, removing resources..."
           
-          # Get the namespace JSON and remove finalizers
-          echo "Removing finalizers..."
-          kubectl get namespace $NAMESPACE -o json | \
-            jq '.spec.finalizers = []' | \
-            kubectl replace --raw "/api/v1/namespaces/$NAMESPACE/finalize" -f -
+          # Remove finalizers from SingleInstanceDatabase resources
+          for db in $(kubectl get singleinstancedatabase -n $NAMESPACE -o name 2>/dev/null); do
+            echo "Removing finalizers from $db"
+            kubectl patch $db -n $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+          done
           
-          echo "Waiting for namespace deletion..."
-          sleep 5
+          # Remove finalizers from namespace
+          echo "Removing namespace finalizers..."
+          kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
           
-          # Verify it's gone
+          echo "Waiting for deletion..."
+          sleep 15
+          
+          # If still exists, force delete
           if kubectl get namespace $NAMESPACE 2>/dev/null; then
-            echo "Namespace still exists, trying alternative method..."
-            kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge
-          else
-            echo "Namespace successfully deleted"
+            echo "Force deleting namespace..."
+            kubectl delete namespace $NAMESPACE --force --grace-period=0 || true
           fi
         fi
 
     - name: Create Kubernetes resources
       run: |
-        echo "=== Creating namespace ==="
-        kubectl create namespace $NAMESPACE || echo "✓ Namespace already exists"
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        echo "=== Creating namespace: $NAMESPACE ==="
+        kubectl create namespace "$NAMESPACE" || echo "✓ Namespace already exists"
         
         echo "=== Creating secret ==="
-        kubectl create secret -n $NAMESPACE generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
+        kubectl create secret -n "$NAMESPACE" generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
         
-        echo "✅ Kubernetes resources created successfully"
+        echo "✅ Kubernetes resources created"
 
     - name: Deploy SIDB
       run: |

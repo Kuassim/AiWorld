@@ -13,8 +13,7 @@ jobs:
     name: Delete All Feature Databases
     runs-on: ubuntu-latest
     env:
-      SUPPRESS_LABEL_WARNING=True
-
+      SUPPRESS_LABEL_WARNING: True
     steps:
     - name: Checkout
       uses: actions/checkout@v3
