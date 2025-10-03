@@ -171,6 +171,34 @@ jobs:
         kustomize build . | kubectl apply -f -
         
         echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
+    
+    - name: Expose database externally
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        # Create LoadBalancer service for database
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: db-external
+          namespace: $NAMESPACE
+        spec:
+          type: LoadBalancer
+          selector:
+            app: db-${{ steps.getname.outputs.idname }}
+          ports:
+          - port: 1521
+            targetPort: 1521
+            name: oracle
+        EOF
+        
+        echo "Waiting for external IP..."
+        kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+          service/db-external -n $NAMESPACE --timeout=300s
+        
+        EXTERNAL_IP=$(kubectl get service db-external -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "External IP: $EXTERNAL_IP"
 
     - name: Wait for Database
       id: getready
@@ -190,7 +218,21 @@ jobs:
     
     - name: Retrieve IP
       id: getaddress
-      run: echo "ipaddress=$(kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o 'jsonpath={.status.pdbConnectString}')" >> "$GITHUB_OUTPUT"
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        # Get external LoadBalancer IP
+        EXTERNAL_IP=$(kubectl get service db-external -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        if [ -z "$EXTERNAL_IP" ]; then
+          echo "ERROR: External IP not assigned"
+          exit 1
+        fi
+        
+        CONNECT_STRING="${EXTERNAL_IP}:1521/FREEPDB1"
+        echo "Connection string: $CONNECT_STRING"
+        echo "ipaddress=$CONNECT_STRING" >> "$GITHUB_OUTPUT"
+
 
   setup_users:
     name: Setup Database Schemas
