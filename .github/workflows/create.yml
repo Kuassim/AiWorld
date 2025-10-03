@@ -97,27 +97,34 @@ jobs:
     - name: Check Nodes
       run: kubectl get nodes -A
 
-    - name: Create Kubernetes resources
+    - name: Force delete stuck namespace
       run: |
         NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
         
-        echo "=== Checking namespace status ==="
-        # Check if namespace exists and is terminating
-        if kubectl get namespace $NAMESPACE 2>/dev/null; then
-          NAMESPACE_STATUS=$(kubectl get namespace $NAMESPACE -o jsonpath='{.status.phase}')
-          echo "Namespace status: $NAMESPACE_STATUS"
+        echo "=== Checking for stuck namespace ==="
+        if kubectl get namespace $NAMESPACE 2>/dev/null | grep -q Terminating; then
+          echo "Namespace is stuck in Terminating state"
           
-          if kubectl get namespace $NAMESPACE -o yaml | grep -q 'phase: Terminating'; then
-            echo "⏳ Namespace is terminating, waiting up to 5 minutes for deletion to complete..."
-            kubectl wait --for=delete namespace/$NAMESPACE --timeout=300s || {
-              echo "❌ Timeout: namespace still terminating after 5 minutes"
-              echo "Attempting to force remove finalizers..."
-              kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
-              sleep 10
-            }
+          # Get the namespace JSON and remove finalizers
+          echo "Removing finalizers..."
+          kubectl get namespace $NAMESPACE -o json | \
+            jq '.spec.finalizers = []' | \
+            kubectl replace --raw "/api/v1/namespaces/$NAMESPACE/finalize" -f -
+          
+          echo "Waiting for namespace deletion..."
+          sleep 5
+          
+          # Verify it's gone
+          if kubectl get namespace $NAMESPACE 2>/dev/null; then
+            echo "Namespace still exists, trying alternative method..."
+            kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge
+          else
+            echo "Namespace successfully deleted"
           fi
         fi
-        
+
+    - name: Create Kubernetes resources
+      run: |
         echo "=== Creating namespace ==="
         kubectl create namespace $NAMESPACE || echo "✓ Namespace already exists"
         
