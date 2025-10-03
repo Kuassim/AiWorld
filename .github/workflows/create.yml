@@ -177,11 +177,16 @@ jobs:
       run: |
         echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
         echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
-        echo "=== Database Status ==="
-        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o yaml || echo "Database not found yet"
-        echo ""
-        echo "=== Waiting for database to be ready ==="
         ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
+
+        echo "=== Checking database readiness ==="
+        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o yaml
+        
+        # Wait for status to show ready
+        kubectl wait --for=condition=Ready \
+          singleinstancedatabase/db-${{ steps.getname.outputs.idname }} \
+          -n feature-${{ steps.getname.outputs.idname }} \
+          --timeout=600s || echo "Timeout waiting for database ready condition"
     
     - name: Retrieve IP
       id: getaddress
@@ -201,6 +206,20 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+
+    - name: Debug connection info
+      run: |
+        echo "=== Connection Information ==="
+        echo "DB_IP: $DB_IP"
+        echo "Expected format: host:port/service_name"
+        
+        # Check if database is reachable
+        if command -v nc &> /dev/null; then
+          HOST=$(echo $DB_IP | cut -d: -f1)
+          PORT=$(echo $DB_IP | cut -d: -f2 | cut -d/ -f1)
+          echo "Testing connection to $HOST:$PORT"
+          nc -zv $HOST $PORT || echo "Cannot reach database"
+        fi
 
     - name: Run LB as system
       uses: liquibase-github-actions/update@v4.23.2
