@@ -1,10 +1,10 @@
-
 name: Create Isolated Database
 
 on:
-  create:
+  push:
     branches: 
       - 'feature/**'
+  workflow_dispatch:
 
 jobs:
   create:
@@ -12,13 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       OP_DEF_PWD: ${{ secrets.FT_DEFAULT_ADMIN_PASSWORD }}
-      BRANCH_REF: ${{ github.event.ref }}
+      BRANCH_REF: ${{ github.ref }}
       COMPARTMENT_OCID: ${{ secrets.OCI_COMPARTMENT_OCID }}
-      OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
-      OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
-      OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
-      OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
-      OCI_CLI_REGION: ${{ secrets.OCI_REGION }}
+      SUPPRESS_LABEL_WARNING: True  
 
     outputs:
       idname: ${{ steps.getname.outputs.idname }}
@@ -30,51 +26,214 @@ jobs:
 
     - name: Retrieve ID
       id: getname
-      run: echo "idname=$(python scripts/run_util.py id "$BRANCH_REF")" >> "$GITHUB_OUTPUT"
+      run: |
+         FULL_REF="${{ github.ref }}"
+         echo "Full ref: $FULL_REF"
+         BRANCH_NAME="${FULL_REF#refs/heads/}"
+         echo "Branch name: $BRANCH_NAME"
+         if [[ "$BRANCH_NAME" == feature/* ]]; then
+           ID_NAME="${BRANCH_NAME#feature/}"
+           ID_NAME=$(echo "$ID_NAME" | tr '/' '-' | tr '_' '-' | tr '[:upper:]' '[:lower:]')
+           echo "Generated ID: $ID_NAME"
+           echo "idname=$ID_NAME" >> "$GITHUB_OUTPUT"
+         else
+           echo "❌ Not a feature branch: $BRANCH_NAME"
+           exit 1
+         fi
 
-    # Set up kustomize
+    - name: Verify ID
+      run: |
+        echo "ID for namespace: ${{ steps.getname.outputs.idname }}"
+        if [ -z "${{ steps.getname.outputs.idname }}" ]; then
+          echo "❌ ERROR: ID is empty!"
+          exit 1
+        fi
     - name: Set up Kustomize
-      run: |-
+      run: |
         curl -sfLo kustomize https://github.com/kubernetes-sigs/kustomize/releases/download/v3.1.0/kustomize_3.1.0_linux_amd64
         chmod u+x ./kustomize
 
-    # Get the GKE credentials so we can deploy to the cluster
-    - name: Configure Kubectl
-      uses: oracle-actions/configure-kubectl-oke@v1.3.2
-      id: test-configure-kubectl-oke-action
-      with:
-        cluster: ${{ secrets.OKE_CLUSTER_OCID }}
+    - name: Setup OCI CLI and Configure kubectl
+      run: |
+        echo "=== Starting OCI CLI setup ==="
+        bash -c "$(curl -L https://raw.githubusercontent.com/oracle/oci-cli/master/scripts/install/install.sh)" -- --accept-all-defaults
+        export PATH="$HOME/bin:$PATH"
+        echo "$HOME/bin" >> $GITHUB_PATH
+        echo "✅ OCI CLI installed"
+        mkdir -p ~/.oci
+        echo "${{ secrets.OCI_CLI_KEY_CONTENT }}" > ~/.oci/key.pem
+        chmod 600 ~/.oci/key.pem
+        echo "✅ Key file created"
+        if openssl rsa -check -noout -in ~/.oci/key.pem 2>/dev/null; then
+          echo "✅ Private key is valid"
+        else
+          echo "❌ Private key is invalid"
+          exit 1
+        fi
+        FINGERPRINT=$(openssl rsa -pubout -outform DER -in ~/.oci/key.pem 2>/dev/null | openssl md5 -c | awk -F'= ' '{print $2}')
+        echo "Generated fingerprint: $FINGERPRINT"
+        cat > ~/.oci/config << EOF
+        [DEFAULT]
+        user=${{ secrets.OCI_CLI_USER }}
+        fingerprint=${FINGERPRINT}
+        tenancy=${{ secrets.OCI_CLI_TENANCY }}
+        region=${{ secrets.OCI_REGION }}
+        key_file=$HOME/.oci/key.pem
+        EOF
+        chmod 600 ~/.oci/config
+        echo "✅ OCI config created"
+        echo "Testing OCI authentication..."
+        $HOME/bin/oci iam user get --user-id '${{ secrets.OCI_CLI_USER }}' --query 'data.name'
+        echo "✅ OCI authentication successful"
+        echo "Configuring kubectl..."
+        mkdir -p ~/.kube
+        $HOME/bin/oci ce cluster create-kubeconfig \
+          --cluster-id ${{ secrets.OKE_CLUSTER_OCID }} \
+          --file ~/.kube/config \
+          --region '${{ secrets.OCI_REGION }}' \
+          --token-version 2.0.0
+        echo "✅ kubectl configured successfully"
 
-    # Test access
     - name: Check Nodes
       run: kubectl get nodes -A
 
+    - name: Force delete stuck namespace and resources
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        if kubectl get namespace $NAMESPACE 2>/dev/null | grep -q Terminating; then
+          echo "Namespace stuck in Terminating, removing resources..."
+          
+          # Remove finalizers from SingleInstanceDatabase resources
+          for db in $(kubectl get singleinstancedatabase -n $NAMESPACE -o name 2>/dev/null); do
+            echo "Removing finalizers from $db"
+            kubectl patch $db -n $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+          done
+          
+          # Remove finalizers from namespace
+          echo "Removing namespace finalizers..."
+          kubectl patch namespace $NAMESPACE -p '{"metadata":{"finalizers":[]}}' --type=merge || true
+          
+          echo "Waiting for deletion..."
+          sleep 15
+          
+          # If still exists, force delete
+          if kubectl get namespace $NAMESPACE 2>/dev/null; then
+            echo "Force deleting namespace..."
+            kubectl delete namespace $NAMESPACE --force --grace-period=0 || true
+          fi
+        fi
 
-     # Create Namespace and Secret
     - name: Create Kubernetes resources
-      run: |-
-        kubectl create namespace feature-${{ steps.getname.outputs.idname }}
-        kubectl create secret -n feature-${{ steps.getname.outputs.idname }} generic default-admin-password --from-literal=oracle_pwd="$OP_DEF_PWD"
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        echo "=== Creating namespace: $NAMESPACE ==="
+        kubectl create namespace "$NAMESPACE" || echo "✓ Namespace already exists"
+        
+        echo "=== Creating secret ==="
+        kubectl create secret -n "$NAMESPACE" generic freedb-admin-secret --from-literal=oracle_pwd="$OP_DEF_PWD"
+        
+        echo "✅ Kubernetes resources created"
 
-    # Run Kustomize and Deploy
     - name: Deploy SIDB
-      run: |-
-        kustomize create --resources base/sidb-free-lite
-        kustomize edit set namesuffix ${{ steps.getname.outputs.idname }}
-        kustomize edit set namespace feature-${{ steps.getname.outputs.idname }}
+      run: |
+        echo "=== Setting up Kustomize configuration ==="
+        
+        # Create kustomization.yaml in the root directory, NOT inside base/sidb-free-lite
+        cat > kustomization.yaml << EOF
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+        
+        namespace: feature-${{ steps.getname.outputs.idname }}
+        
+        resources:
+          - base/sidb-free-lite
+        
+        patches:
+          - patch: |-
+              - op: replace
+                path: /metadata/name
+                value: db-${{ steps.getname.outputs.idname }}
+            target:
+             kind: SingleInstanceDatabase
+        EOF
+        
+        echo "=== Kustomization file created ==="
+        cat kustomization.yaml
+        
+        # Build from root directory
+        echo "=== Building with Kustomize ==="
+        kustomize build .
+        
+        # Apply the configuration
+        echo "=== Applying to cluster ==="
         kustomize build . | kubectl apply -f -
+        
+        echo "✅ Database deployment initiated with name: db-${{ steps.getname.outputs.idname }}"
+    
+    - name: Expose database externally
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        # Create LoadBalancer service for database
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: db-external
+          namespace: $NAMESPACE
+        spec:
+          type: LoadBalancer
+          selector:
+            app: db-${{ steps.getname.outputs.idname }}
+          ports:
+          - port: 1521
+            targetPort: 1521
+            name: oracle
+        EOF
+        
+        echo "Waiting for external IP..."
+        kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].ip}' \
+          service/db-external -n $NAMESPACE --timeout=300s
+        
+        EXTERNAL_IP=$(kubectl get service db-external -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        echo "External IP: $EXTERNAL_IP"
 
-    # Wait for database to get ready
     - name: Wait for Database
       id: getready
-      run: |-
+      run: |
+        echo "✅ Waiting for database db-${{ steps.getname.outputs.idname }}" 
+        echo "✅ In namespace feature-${{ steps.getname.outputs.idname }}"
         ./scripts/checkdb.sh ${{ steps.getname.outputs.idname }}
+
+        echo "=== Checking database readiness ==="
+        kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o yaml
+        
+        # Wait for status to show ready
+        kubectl wait --for=condition=Ready \
+          singleinstancedatabase/db-${{ steps.getname.outputs.idname }} \
+          -n feature-${{ steps.getname.outputs.idname }} \
+          --timeout=600s || echo "Timeout waiting for database ready condition"
     
     - name: Retrieve IP
       id: getaddress
-      run: echo "ipaddress=$(kubectl get -n feature-${{ steps.getname.outputs.idname }} singleinstancedatabase db-${{ steps.getname.outputs.idname }} -o 'jsonpath={.status.pdbConnectString}')" >> "$GITHUB_OUTPUT"
+      run: |
+        NAMESPACE="feature-${{ steps.getname.outputs.idname }}"
+        
+        # Get external LoadBalancer IP
+        EXTERNAL_IP=$(kubectl get service db-external -n $NAMESPACE -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+        
+        if [ -z "$EXTERNAL_IP" ]; then
+          echo "ERROR: External IP not assigned"
+          exit 1
+        fi
+        
+        CONNECT_STRING="${EXTERNAL_IP}:1521/FREEPDB1"
+        echo "Connection string: $CONNECT_STRING"
+        echo "ipaddress=$CONNECT_STRING" >> "$GITHUB_OUTPUT"
 
-  # Setup DB Schemas/Users
+
   setup_users:
     name: Setup Database Schemas
     runs-on: ubuntu-latest
@@ -90,8 +249,21 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
 
-    # Run LB as system
-    - name: "Run LB as system"
+    - name: Debug connection info
+      run: |
+        echo "=== Connection Information ==="
+        echo "DB_IP: $DB_IP"
+        echo "Expected format: host:port/service_name"
+        
+        # Check if database is reachable
+        if command -v nc &> /dev/null; then
+          HOST=$(echo $DB_IP | cut -d: -f1)
+          PORT=$(echo $DB_IP | cut -d: -f2 | cut -d/ -f1)
+          echo "Testing connection to $HOST:$PORT"
+          nc -zv $HOST $PORT || echo "Cannot reach database"
+        fi
+
+    - name: Run LB as system
       uses: liquibase-github-actions/update@v4.23.2
       with:
         changelogFile: "changelog.xml"
@@ -100,12 +272,10 @@ jobs:
         password: ${{ env.DB_PWD }}
         searchPath: "/github/workspace/liquibase/admin"
         
-    # List Schemas
-    - name: "List Schemas to Loop Through"
+    - name: List Schemas to Loop Through
       id: getschemas
       run: echo "schemas=$(python scripts/run_util.py schemas liquibase)" >> "$GITHUB_OUTPUT"
 
-  # Setup Tables
   setup_tables:
     name: Setup Database Tables
     runs-on: ubuntu-latest
@@ -120,7 +290,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
     
-    - name: "Run LB as User"
+    - name: Run LB as User
       uses: liquibase-github-actions/update@v4.23.2
       with:
         changelogFile: "changelog.xml"
