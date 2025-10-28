@@ -153,7 +153,8 @@ Update your database schemas in:
 .
 ├── .github/
 │   └── workflows/
-│       ├── create-db.yml          # Database creation workflow
+│       ├── deploy to OKE          # OKE 
+|       |── create-db.yml          # Database creation workflow
 │       └── delete-db.yml          # Database deletion workflow
 ├── base/
 │   └── sidb-free-lite/
