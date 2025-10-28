@@ -309,7 +309,7 @@ Initial version by [Norman Aberin's blog post](https://medium.com/@npaberin/data
 
 ## 📝 License
 
-[https://oss.oracle.com/licenses/upl/]
+Copyright (c) 2023 Oracle and/or its affiliates. Released under the Universal Permissive License v1.0 as shown at <https://oss.oracle.com/licenses/upl/>.
 
 ## 🤝 Contributing
 
