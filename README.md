@@ -153,7 +153,7 @@ Update your database schemas in:
 .
 ├── .github/
 │   └── workflows/
-│       ├── deploy to OKE          # OKE 
+│       ├── deploy-to-oke.yml      # Connecting to OKE 
 |       |── create-db.yml          # Database creation workflow
 │       └── delete-db.yml          # Database deletion workflow
 ├── base/
