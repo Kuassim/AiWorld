@@ -305,11 +305,11 @@ Triggered on branch deletion:
 
 ## 🙏 Acknowledgments
 
-Inspired by [Norman Aberin's blog post](https://medium.com/@npaberin/database-ci-cd-with-the-oracle-db-operator-for-kubernetes-github-actions-and-liquibase-6dd161940a68) on Oracle DB Operator CI/CD.
+Initial version by [Norman Aberin's blog post](https://medium.com/@npaberin/database-ci-cd-with-the-oracle-db-operator-for-kubernetes-github-actions-and-liquibase-6dd161940a68) on Oracle DB Operator CI/CD.
 
 ## 📝 License
 
-[Add your license here - e.g., MIT, Apache 2.0]
+[https://oss.oracle.com/licenses/upl/]
 
 ## 🤝 Contributing
 
@@ -325,7 +325,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - **Issues**: [GitHub Issues](https://github.com/Kuassim/AiWorld/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/Kuassim/AiWorld/discussions)
-- **Blog**: [Read the full article](YOUR_BLOG_LINK_HERE)
+- **Blog**: [Read the full article](https://medium.com/@kuassimensah/cb42ec5f8697)
 
 ## 📧 Contact
 
