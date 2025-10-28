@@ -6,7 +6,7 @@ Automated Oracle Database provisioning and schema management for feature branch 
 
 This repository contains the complete implementation of an automated CI/CD pipeline that creates isolated Oracle Database instances for each feature branch, deploys schemas using Liquibase, and automatically cleans up resources when branches are deleted.
 
-**Read the full story:** [Database CI/CD with Oracle Database Kubernetes Operator, GitHub Actions, and Liquibase](YOUR_BLOG_LINK_HERE)
+**Read the full story:** [Database CI/CD with Oracle Database Kubernetes Operator, GitHub Actions, and Liquibase](https://medium.com/@kuassimensah/cb42ec5f8697)
 
 ### The Problem We Solved
 
